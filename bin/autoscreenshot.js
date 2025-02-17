@@ -13,7 +13,20 @@ const {
 } = require('../src/utils/validation');
 const { takeScreenshot } = require('../src/utils/browser');
 const { saveScreenshot } = require('../src/utils/file');
+const { isFirstRun, runSetup } = require('../src/utils/setup');
 const path = require('path');
+
+// Check for first run
+(async () => {
+  try {
+    if (await isFirstRun()) {
+      await runSetup();
+      process.exit(0);
+    }
+  } catch (error) {
+    handleError('Failed to check first run status: ' + error.message);
+  }
+})();
 
 // Set up the program
 program
@@ -135,6 +148,7 @@ program
   .option('-s, --show', 'Show current settings')
   .option('-r, --reset', 'Reset settings to defaults')
   .option('-i, --init', 'Initialize settings file in current directory')
+  .option('--setup', 'Run the interactive setup workflow')
   .action(async (options) => {
     try {
       const {
@@ -145,6 +159,11 @@ program
         getSettingsPath,
         resetSettings
       } = require('../src/utils/settings');
+
+      if (options.setup) {
+        await runSetup();
+        return;
+      }
 
       if (options.path) {
         // Set custom settings file path
