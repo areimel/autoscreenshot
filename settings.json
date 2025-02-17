@@ -1,0 +1,73 @@
+{
+  "version": "1.0.0",
+  "defaults": {
+    "format": {
+      "type": "jpg",
+      "skipPrompt": false,
+      "jpgQuality": 80
+    },
+    "delay": {
+      "seconds": 1.5,
+      "skipPrompt": false
+    },
+    "fileDestination": {
+      "path": "",
+      "skipPrompt": false,
+      "createTimestampFolders": false
+    }
+  },
+  "devices": {
+    "desktop": {
+      "width": 1920,
+      "height": 1080,
+      "enabled": true
+    },
+    "laptop": {
+      "width": 1366,
+      "height": 768,
+      "enabled": true
+    },
+    "tablet": {
+      "width": 768,
+      "height": 1024,
+      "enabled": true
+    },
+    "phone": {
+      "width": 375,
+      "height": 667,
+      "enabled": true
+    },
+    "custom": {
+      "largeDisplay": {
+        "width": 2400,
+        "height": 1600,
+        "enabled": false
+      }
+    }
+  },
+  "presets": {
+    "mobile": {
+      "description": "Mobile-only viewport screenshot",
+      "device": "phone",
+      "type": "viewport",
+      "format": "jpg"
+    },
+    "fullpage": {
+      "description": "Full-page screenshot for all devices",
+      "device": "all",
+      "type": "full-page",
+      "format": "png",
+      "delay": 2
+    }
+  },
+  "interface": {
+    "showProgressBar": true,
+    "colorOutput": true,
+    "verboseLogging": true
+  },
+  "batch": {
+    "defaultOutputFolder": "autoscreenshot-batch",
+    "includeTimestamp": true,
+    "maxConcurrent": 3
+  }
+}

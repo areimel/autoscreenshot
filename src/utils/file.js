@@ -2,6 +2,28 @@ const fs = require('fs');
 const path = require('path');
 const chalk = require('chalk');
 const { handleError } = require('./validation');
+const { loadSettings } = require('./settings');
+
+/**
+ * Get the base output directory
+ * @param {Object} options - Screenshot options
+ * @returns {Promise<string>} Base output directory path
+ */
+async function getBaseOutputDir(options = {}) {
+  const settings = await loadSettings();
+  const fileDestination = settings.defaults.fileDestination;
+
+  // Use options.output if provided, otherwise use settings path
+  let baseDir = options.output || fileDestination.path || process.cwd();
+
+  // Create timestamp folder if enabled
+  if (fileDestination.createTimestampFolders) {
+    const timestamp = new Date().toISOString().split('T')[0];
+    baseDir = path.join(baseDir, timestamp);
+  }
+
+  return baseDir;
+}
 
 /**
  * Generate a filename for the screenshot
@@ -46,18 +68,25 @@ function ensureDirectoryExists(dirPath) {
  * @param {string} url - The URL that was screenshot
  * @param {string} device - The device type
  * @param {Object} options - Screenshot options
- * @returns {string} Path to saved file
+ * @returns {Promise<string>} Path to saved file
  */
-function saveSingleScreenshot(screenshot, url, device, options = {}) {
+async function saveSingleScreenshot(screenshot, url, device, options = {}) {
   try {
-    const outputPath = options.output || process.cwd();
+    const baseDir = await getBaseOutputDir(options);
+
+    // Create device-specific subfolder if multiple devices
+    const outputPath = options.device === 'all' ?
+      path.join(baseDir, device) : baseDir;
+
+    ensureDirectoryExists(outputPath);
+
     const filename = generateFilename(url, device, options);
     const filepath = path.join(outputPath, filename);
 
     console.info(chalk.blue(`Saving screenshot to: ${filepath}`));
     fs.writeFileSync(filepath, screenshot);
     console.info(chalk.green('Screenshot saved successfully'));
-    
+
     return filepath;
   } catch (error) {
     handleError(`Failed to save screenshot: ${error.message}`);
@@ -69,26 +98,26 @@ function saveSingleScreenshot(screenshot, url, device, options = {}) {
  * @param {Buffer|Object} screenshots - Screenshot buffer or object containing multiple screenshots
  * @param {string} url - The URL that was screenshot
  * @param {Object} options - Screenshot options
- * @returns {string|string[]} Path(s) to saved file(s)
+ * @returns {Promise<string|string[]>} Path(s) to saved file(s)
  */
-function saveScreenshot(screenshots, url, options = {}) {
+async function saveScreenshot(screenshots, url, options = {}) {
   try {
-    const outputPath = options.output || process.cwd();
-    console.info(chalk.blue(`Using output path: ${outputPath}`));
-    ensureDirectoryExists(outputPath);
+    const baseDir = await getBaseOutputDir(options);
+    console.info(chalk.blue(`Using base output directory: ${baseDir}`));
+    ensureDirectoryExists(baseDir);
 
     // Handle multiple screenshots (all devices)
     if (typeof screenshots === 'object' && !Buffer.isBuffer(screenshots)) {
       const savedPaths = [];
       for (const [device, screenshot] of Object.entries(screenshots)) {
-        const filepath = saveSingleScreenshot(screenshot, url, device, options);
+        const filepath = await saveSingleScreenshot(screenshot, url, device, options);
         savedPaths.push(filepath);
       }
       return savedPaths;
     }
-    
+
     // Handle single screenshot
-    return saveSingleScreenshot(screenshots, url, options.device || 'default', options);
+    return await saveSingleScreenshot(screenshots, url, options.device || 'default', options);
   } catch (error) {
     handleError(`Failed to save screenshot(s): ${error.message}`);
   }
@@ -97,5 +126,6 @@ function saveScreenshot(screenshots, url, options = {}) {
 module.exports = {
   generateFilename,
   ensureDirectoryExists,
-  saveScreenshot
-}; 
+  saveScreenshot,
+  getBaseOutputDir
+};
