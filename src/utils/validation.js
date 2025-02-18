@@ -1,4 +1,5 @@
 const chalk = require('chalk');
+const { ERROR_TYPES, ERROR_MESSAGES, WARNING_MESSAGES } = require('./errors');
 
 /**
  * Validates a URL string
@@ -39,7 +40,14 @@ function isValidDeviceSize(device) {
  */
 function isValidDelay(delay) {
   const delayNum = parseFloat(delay);
-  return !isNaN(delayNum) && delayNum >= 0;
+  if (!isNaN(delayNum) && delayNum >= 0) {
+    // Add warning for long delays
+    if (delayNum > 10) {
+      showWarning(WARNING_MESSAGES.LONG_DELAY(delayNum));
+    }
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -52,26 +60,62 @@ function isValidFormat(format) {
 }
 
 /**
- * Handles and formats error messages
- * @param {string} message - The error message
- * @param {string} type - The type of error
+ * Shows a warning message
+ * @param {Object} warning - Warning message object
  */
-function handleError(message, type = 'error') {
-  const prefix = type.toUpperCase();
-  
-  switch (type) {
+function showWarning(warning) {
+  console.warn(chalk.bold.yellow(`[WARNING] ${warning.message}`));
+}
+
+/**
+ * Handles and formats error messages
+ * @param {string|Object} error - The error message or object
+ * @param {string} [type] - The type of error (if string message provided)
+ */
+function handleError(error, type = 'error') {
+  let errorMessage;
+  let errorType;
+
+  if (typeof error === 'string') {
+    // Handle legacy string error messages
+    errorMessage = error;
+    errorType = type;
+  } else {
+    // Handle new error message objects
+    errorMessage = error.message;
+    errorType = error.type || ERROR_TYPES.UNKNOWN;
+  }
+
+  const prefix = errorType.toUpperCase();
+  const formattedMessage = errorMessage.split('\n').join('\n  ');
+
+  switch (errorType) {
+    case ERROR_TYPES.VALIDATION:
     case 'error':
-      console.error(chalk.bold.red(`[${prefix}] ${message}`));
+      console.error(chalk.bold.red(`[${prefix}] ${formattedMessage}`));
       process.exit(1);
       break;
+    case ERROR_TYPES.NETWORK:
+    case ERROR_TYPES.BROWSER:
+      console.error(chalk.bold.red(`[${prefix}] ${formattedMessage}`));
+      process.exit(1);
+      break;
+    case ERROR_TYPES.FILE_SYSTEM:
+    case ERROR_TYPES.SETTINGS:
+      console.error(chalk.bold.red(`[${prefix}] ${formattedMessage}`));
+      if (type !== 'warning') {
+        process.exit(1);
+      }
+      break;
     case 'warning':
-      console.warn(chalk.bold.yellow(`[${prefix}] ${message}`));
+      console.warn(chalk.bold.yellow(`[${prefix}] ${formattedMessage}`));
       break;
     case 'info':
-      console.info(chalk.bold.blue(`[${prefix}] ${message}`));
+      console.info(chalk.bold.blue(`[${prefix}] ${formattedMessage}`));
       break;
     default:
-      console.log(chalk.white(message));
+      console.error(chalk.bold.red(`[ERROR] ${formattedMessage}`));
+      process.exit(1);
   }
 }
 
@@ -81,5 +125,6 @@ module.exports = {
   isValidDeviceSize,
   isValidDelay,
   isValidFormat,
-  handleError
-}; 
+  handleError,
+  showWarning
+};

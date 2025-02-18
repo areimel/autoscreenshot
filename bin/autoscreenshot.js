@@ -32,91 +32,116 @@ const path = require('path');
 // Set up the program
 program
   .name('autoscreenshot')
-  .description('A CLI tool for taking automated screenshots of web pages')
+  .description(`
+  A powerful CLI tool for taking automated screenshots of web pages.
+
+  Examples:
+    $ autoscreenshot                          # Start interactive mode
+    $ autoscreenshot https://example.com      # Interactive mode with pre-filled URL
+    $ autoscreenshot capture example.com      # Quick capture with defaults
+    $ autoscreenshot capture example.com -d all    # Capture for all devices
+  `)
   .version(package.version);
 
-// Default command (no arguments)
+// Interactive command (default when no arguments)
 program
-  .action(async () => {
-    if (process.argv.length === 2) {
-      console.info(chalk.blue('Welcome to AutoScreenshot! 📸'));
-      console.info(chalk.gray('Interactive Mode\n'));
+  .command('interactive [url]', { isDefault: true })
+  .description('Start interactive mode with step-by-step prompts')
+  .usage('[url] [options]')
+  .addHelpText('after', `
+  Examples:
+    $ autoscreenshot                     # Start interactive mode
+    $ autoscreenshot https://example.com # Pre-fill URL in interactive mode
+  `)
+  .action(async (url) => {
+    console.info(chalk.blue('Welcome to AutoScreenshot! 📸'));
+    console.info(chalk.gray('Interactive Mode\n'));
 
-      const answers = await inquirer.prompt([
-        {
-          type: 'input',
-          name: 'url',
-          message: 'Enter the URL to screenshot:',
-          validate: (input) => isValidUrl(input) || 'Please enter a valid URL'
-        },
-        {
-          type: 'list',
-          name: 'type',
-          message: 'Choose screenshot type:',
-          choices: ['full-page', 'viewport'],
-          default: 'full-page'
-        },
-        {
-          type: 'list',
-          name: 'device',
-          message: 'Choose device size:',
-          choices: ['desktop', 'laptop', 'tablet', 'phone', 'all'],
-          default: 'desktop'
-        },
-        {
-          type: 'input',
-          name: 'wait',
-          message: 'Delay before screenshot (seconds):',
-          default: '0',
-          validate: (input) => isValidDelay(input) || 'Please enter a valid delay time'
-        },
-        {
-          type: 'list',
-          name: 'format',
-          message: 'Choose file format:',
-          choices: ['png', 'jpg'],
-          default: 'png'
-        }
-      ]);
-
-      try {
-        console.info(chalk.blue('\nStarting screenshot process...'));
-        console.info(chalk.gray('URL:', answers.url));
-        console.info(chalk.gray('Type:', answers.type));
-        console.info(chalk.gray('Device:', answers.device));
-        console.info(chalk.gray('Delay:', answers.wait, 'seconds'));
-        console.info(chalk.gray('Format:', answers.format));
-
-        // Take screenshot(s)
-        const screenshots = await takeScreenshot(answers.url, answers);
-
-        // Save screenshot(s)
-        const savedPaths = await saveScreenshot(screenshots, answers.url, answers);
-
-        // Display results
-        if (Array.isArray(savedPaths)) {
-          console.info(chalk.green('\n✨ All screenshots saved successfully:'));
-          savedPaths.forEach(path => {
-            console.info(chalk.green(`  ✓ ${path}`));
-          });
-        } else {
-          console.info(chalk.green(`\n✨ Screenshot saved successfully to:\n  ✓ ${savedPaths}`));
-        }
-      } catch (error) {
-        handleError(`An unexpected error occurred: ${error.message}`);
+    const answers = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'url',
+        message: 'Enter the URL to screenshot:',
+        default: url || undefined,
+        validate: (input) => isValidUrl(input) || 'Please enter a valid URL'
+      },
+      {
+        type: 'list',
+        name: 'type',
+        message: 'Choose screenshot type:',
+        choices: ['full-page', 'viewport'],
+        default: 'full-page'
+      },
+      {
+        type: 'list',
+        name: 'device',
+        message: 'Choose device size:',
+        choices: ['desktop', 'laptop', 'tablet', 'phone', 'all'],
+        default: 'desktop'
+      },
+      {
+        type: 'input',
+        name: 'wait',
+        message: 'Delay before screenshot (seconds):',
+        default: '0',
+        validate: (input) => isValidDelay(input) || 'Please enter a valid delay time'
+      },
+      {
+        type: 'list',
+        name: 'format',
+        message: 'Choose file format:',
+        choices: ['png', 'jpg'],
+        default: 'png'
       }
+    ]);
+
+    try {
+      console.info(chalk.blue('\nStarting screenshot process...'));
+      console.info(chalk.gray('URL:', answers.url));
+      console.info(chalk.gray('Type:', answers.type));
+      console.info(chalk.gray('Device:', answers.device));
+      console.info(chalk.gray('Delay:', answers.wait, 'seconds'));
+      console.info(chalk.gray('Format:', answers.format));
+
+      // Take screenshot(s)
+      const screenshots = await takeScreenshot(answers.url, answers);
+
+      // Save screenshot(s)
+      const savedPaths = await saveScreenshot(screenshots, answers.url, answers);
+
+      // Display results
+      if (Array.isArray(savedPaths)) {
+        console.info(chalk.green('\n✨ All screenshots saved successfully:'));
+        savedPaths.forEach(path => {
+          console.info(chalk.green(`  ✓ ${path}`));
+        });
+      } else {
+        console.info(chalk.green(`\n✨ Screenshot saved successfully to:\n  ✓ ${savedPaths}`));
+      }
+    } catch (error) {
+      handleError(`An unexpected error occurred: ${error.message}`);
     }
   });
 
 // URL command
 program
-  .argument('[url]', 'URL to take screenshot of')
-  .option('-t, --type <type>', 'screenshot type (full-page or viewport)')
-  .option('-d, --device <device>', 'device size (desktop, laptop, tablet, phone, or all)')
-  .option('-w, --wait <seconds>', 'delay before taking screenshot')
-  .option('-f, --format <format>', 'file format (png or jpg)')
-  .option('-o, --output <path>', 'output file destination')
+  .command('capture [url]')
+  .description('Quickly capture screenshots with optional parameters')
+  .usage('[url] [options]')
+  .option('-t, --type <type>', 'screenshot type: full-page or viewport', 'full-page')
+  .option('-d, --device <device>', 'device size: desktop, laptop, tablet, phone, or all', 'desktop')
+  .option('-w, --wait <seconds>', 'delay before capture in seconds', '0')
+  .option('-f, --format <format>', 'file format: png or jpg', 'png')
+  .option('-o, --output <path>', 'custom output directory')
   .option('-p, --preset <name>', 'use a predefined preset from settings')
+  .addHelpText('after', `
+  Examples:
+    $ autoscreenshot capture example.com                    # Basic capture
+    $ autoscreenshot capture example.com -d all            # Capture all device sizes
+    $ autoscreenshot capture example.com -t viewport       # Capture viewport only
+    $ autoscreenshot capture example.com -w 5              # Wait 5 seconds before capture
+    $ autoscreenshot capture example.com -p blog-preset    # Use a preset
+  `)
   .action(async (url, options) => {
     try {
       if (url) {
@@ -188,31 +213,22 @@ program
     }
   });
 
-// Batch mode command
-program
-  .command('batch')
-  .description('Process multiple URLs from a JSON or CSV file')
-  .action(() => {
-    handleError('Batch mode is not implemented yet', 'warning');
-  });
-
-// Accessibility mode command
-program
-  .command('accessibility')
-  .description('Take screenshots with accessibility filters')
-  .action(() => {
-    handleError('Accessibility mode is not implemented yet', 'warning');
-  });
-
 // Settings command
 program
   .command('settings')
-  .description('Manage autoscreenshot settings')
-  .option('-p, --path <path>', 'Path to custom settings file')
-  .option('-s, --show', 'Show current settings')
-  .option('-r, --reset', 'Reset settings to defaults')
-  .option('-i, --init', 'Initialize settings file in current directory')
-  .option('--setup', 'Run the interactive setup workflow')
+  .description('Manage application settings and presets')
+  .option('-p, --path <path>', 'set custom settings file path')
+  .option('-s, --show', 'display current settings')
+  .option('-r, --reset', 'reset settings to defaults')
+  .option('-i, --init', 'initialize settings file in current directory')
+  .option('--setup', 'run the interactive setup workflow')
+  .addHelpText('after', `
+  Examples:
+    $ autoscreenshot settings --show           # View current settings
+    $ autoscreenshot settings --reset          # Reset to defaults
+    $ autoscreenshot settings --setup          # Run setup wizard
+    $ autoscreenshot settings -i               # Create settings file here
+  `)
   .action(async (options) => {
     try {
       const {
@@ -278,7 +294,12 @@ program
 // Presets command
 program
   .command('presets')
-  .description('List available screenshot presets')
+  .description('List and manage screenshot presets')
+  .addHelpText('after', `
+  Examples:
+    $ autoscreenshot presets                   # List all presets
+    $ autoscreenshot capture example.com -p blog    # Use 'blog' preset
+  `)
   .action(async () => {
     try {
       const { loadSettings } = require('../src/utils/settings');
@@ -304,5 +325,32 @@ program
       handleError(`Failed to list presets: ${error.message}`);
     }
   });
+
+// Batch mode command
+program
+  .command('batch')
+  .description('Process multiple URLs from a JSON or CSV file (Coming Soon)')
+  .action(() => {
+    handleError('Batch mode is not implemented yet', 'warning');
+  });
+
+// Accessibility mode command
+program
+  .command('accessibility')
+  .description('Take screenshots with accessibility filters (Coming Soon)')
+  .action(() => {
+    handleError('Accessibility mode is not implemented yet', 'warning');
+  });
+
+// Add global help text
+program.addHelpText('beforeAll', `
+AutoScreenshot CLI ${package.version}
+A powerful tool for capturing web screenshots across different devices and formats.
+`);
+
+program.addHelpText('afterAll', `
+For more information and examples, visit:
+https://github.com/yourusername/autoscreenshot#readme
+`);
 
 program.parse();

@@ -1,6 +1,16 @@
 const puppeteer = require('puppeteer');
 const chalk = require('chalk');
-const { handleError } = require('./validation');
+const ora = require('ora');
+const { handleError, showWarning } = require('./validation');
+const { ERROR_MESSAGES, WARNING_MESSAGES } = require('./errors');
+
+// Configure spinner options for Windows compatibility
+const spinnerOptions = {
+  spinner: {
+    interval: 80,
+    frames: ['-', '\\', '|', '/']
+  }
+};
 
 // Device size presets
 const deviceSizes = {
@@ -11,12 +21,22 @@ const deviceSizes = {
 };
 
 /**
+ * Create a new spinner with the given text
+ * @param {string} text - The spinner text
+ * @returns {ora.Ora} A new spinner instance
+ */
+function createSpinner(text) {
+  return ora({ ...spinnerOptions, text });
+}
+
+/**
  * Initialize a Puppeteer browser instance
  * @returns {Promise<Browser>} Puppeteer browser instance
  */
 async function initBrowser() {
+  const spinner = createSpinner('Launching browser...');
+  spinner.start();
   try {
-    console.info(chalk.blue('Launching browser...'));
     const browser = await puppeteer.launch({
       headless: true,
       defaultViewport: null,
@@ -27,10 +47,11 @@ async function initBrowser() {
         '--disable-features=IsolateOrigins,site-per-process'
       ]
     });
-    console.info(chalk.green('Browser launched successfully'));
+    spinner.succeed('Browser launched successfully');
     return browser;
   } catch (error) {
-    handleError(`Failed to launch browser: ${error.message}`);
+    spinner.fail('Browser launch failed');
+    handleError(ERROR_MESSAGES.BROWSER_LAUNCH_FAILED(error.message));
   }
 }
 
@@ -49,25 +70,42 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
  * @returns {Promise<Buffer>} Screenshot buffer
  */
 async function takeDeviceScreenshot(page, deviceType, options = {}) {
-  console.info(chalk.blue(`Setting viewport size for ${deviceType}...`));
-  await page.setViewport({
-    ...deviceSizes[deviceType],
-    deviceScaleFactor: 1
-  });
+  const spinner = createSpinner(`Taking screenshot for ${deviceType}...`);
+  spinner.start();
+  try {
+    const viewport = deviceSizes[deviceType];
 
-  // Wait for any animations to settle
-  await sleep(500);
+    // Check for large viewport
+    if (viewport.width * viewport.height > 2073600) { // Greater than 1080p
+      showWarning(WARNING_MESSAGES.LARGE_VIEWPORT(deviceType, viewport.width, viewport.height));
+    }
 
-  const screenshotOptions = {
-    fullPage: options.type === 'full-page',
-    type: options.format?.toLowerCase() || 'jpeg',
-    quality: options.format?.toLowerCase() === 'jpeg' ? 80 : undefined,
-    optimizeForSpeed: true,
-    captureBeyondViewport: options.type === 'full-page'
-  };
+    await page.setViewport({
+      ...viewport,
+      deviceScaleFactor: 1
+    });
 
-  console.info(chalk.blue(`Taking screenshot for ${deviceType}...`));
-  return await page.screenshot(screenshotOptions);
+    // Wait for any animations to settle
+    await sleep(500);
+
+    // Convert jpeg to jpg for Puppeteer compatibility
+    const format = options.format?.toLowerCase() === 'jpg' || options.format?.toLowerCase() === 'jpeg' ? 'jpeg' : 'png';
+
+    const screenshotOptions = {
+      fullPage: options.type === 'full-page',
+      type: format,
+      quality: format === 'jpeg' ? 80 : undefined,
+      optimizeForSpeed: true,
+      captureBeyondViewport: options.type === 'full-page'
+    };
+
+    const screenshot = await page.screenshot(screenshotOptions);
+    spinner.succeed(`Captured ${deviceType} screenshot`);
+    return screenshot;
+  } catch (error) {
+    spinner.fail(`Failed to capture ${deviceType} screenshot`);
+    throw error;
+  }
 }
 
 /**
@@ -98,33 +136,31 @@ async function setupPage(page) {
  */
 async function takeScreenshot(url, options = {}) {
   let browser;
+  const mainSpinner = createSpinner('Starting screenshot process...');
+  mainSpinner.start();
   try {
     browser = await initBrowser();
     const page = await browser.newPage();
-    
-    // Set up page with common headers and settings
     await setupPage(page);
 
-    // Navigate to URL with improved error handling
-    console.info(chalk.blue(`Navigating to ${url}...`));
+    mainSpinner.text = `Loading ${url}...`;
     const response = await page.goto(url, {
       waitUntil: ['load', 'networkidle0'],
       timeout: 30000
     });
 
     if (!response.ok()) {
-      throw new Error(`Failed to load page: ${response.status()} ${response.statusText()}`);
+      mainSpinner.fail(`Failed to load page: ${response.status()} ${response.statusText()}`);
+      handleError(ERROR_MESSAGES.PAGE_LOAD_FAILED(url, response.status(), response.statusText()));
     }
 
-    // Wait for specified delay
     if (options.wait) {
       const delay = parseFloat(options.wait);
-      console.info(chalk.blue(`Waiting for ${delay} seconds...`));
+      mainSpinner.text = `Waiting ${delay} seconds for page to settle...`;
       await sleep(delay * 1000);
     }
 
-    // Additional wait for dynamic content
-    console.info(chalk.blue('Waiting for dynamic content to load...'));
+    mainSpinner.text = 'Preparing page for capture...';
     await page.evaluate(() => new Promise((resolve) => {
       let totalHeight = 0;
       const distance = 100;
@@ -138,27 +174,25 @@ async function takeScreenshot(url, options = {}) {
         }
       }, 100);
     }));
-
     await sleep(1000); // Wait for scrolling to settle
 
     // Take screenshots based on device option
     if (options.device === 'all') {
+      mainSpinner.succeed('Page ready for capture');
       const screenshots = {};
       for (const deviceType of Object.keys(deviceSizes)) {
         screenshots[deviceType] = await takeDeviceScreenshot(page, deviceType, options);
-        console.info(chalk.green(`Screenshot captured successfully for ${deviceType}`));
       }
       return screenshots;
     } else {
-      const screenshot = await takeDeviceScreenshot(page, options.device || 'desktop', options);
-      console.info(chalk.green('Screenshot captured successfully'));
-      return screenshot;
+      mainSpinner.succeed('Page ready for capture');
+      return await takeDeviceScreenshot(page, options.device || 'desktop', options);
     }
   } catch (error) {
-    handleError(`Failed to take screenshot: ${error.message}`);
+    mainSpinner.fail('Screenshot process failed');
+    handleError(error.message);
   } finally {
     if (browser) {
-      console.info(chalk.blue('Closing browser...'));
       await browser.close();
     }
   }
@@ -168,4 +202,4 @@ module.exports = {
   initBrowser,
   takeScreenshot,
   deviceSizes
-}; 
+};

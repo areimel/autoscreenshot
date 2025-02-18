@@ -1,8 +1,27 @@
 const fs = require('fs');
 const path = require('path');
 const chalk = require('chalk');
+const ora = require('ora');
 const { handleError } = require('./validation');
 const { loadSettings } = require('./settings');
+const { ERROR_MESSAGES } = require('./errors');
+
+// Configure spinner options for Windows compatibility
+const spinnerOptions = {
+  spinner: {
+    interval: 80,
+    frames: ['-', '\\', '|', '/']
+  }
+};
+
+/**
+ * Create a new spinner with the given text
+ * @param {string} text - The spinner text
+ * @returns {ora.Ora} A new spinner instance
+ */
+function createSpinner(text) {
+  return ora({ ...spinnerOptions, text });
+}
 
 /**
  * Get the base output directory
@@ -10,19 +29,20 @@ const { loadSettings } = require('./settings');
  * @returns {Promise<string>} Base output directory path
  */
 async function getBaseOutputDir(options = {}) {
-  const settings = await loadSettings();
-  const fileDestination = settings.defaults.fileDestination;
+  try {
+    const settings = await loadSettings();
+    const fileDestination = settings.defaults.fileDestination;
+    let baseDir = options.output || fileDestination.path || process.cwd();
 
-  // Use options.output if provided, otherwise use settings path
-  let baseDir = options.output || fileDestination.path || process.cwd();
+    if (fileDestination.createTimestampFolders) {
+      const timestamp = new Date().toISOString().split('T')[0];
+      baseDir = path.join(baseDir, timestamp);
+    }
 
-  // Create timestamp folder if enabled
-  if (fileDestination.createTimestampFolders) {
-    const timestamp = new Date().toISOString().split('T')[0];
-    baseDir = path.join(baseDir, timestamp);
+    return baseDir;
+  } catch (error) {
+    handleError(ERROR_MESSAGES.SETTINGS_LOAD_FAILED(error.message));
   }
-
-  return baseDir;
 }
 
 /**
@@ -39,9 +59,7 @@ function generateFilename(url, device, options = {}) {
   const type = options.type || 'default';
   const format = options.format || 'jpg';
 
-  const filename = `${hostname}-${device}-${type}-${timestamp}.${format}`;
-  console.info(chalk.blue(`Generated filename: ${filename}`));
-  return filename;
+  return `${hostname}-${device}-${type}-${timestamp}.${format}`;
 }
 
 /**
@@ -49,16 +67,18 @@ function generateFilename(url, device, options = {}) {
  * @param {string} dirPath - Directory path
  */
 function ensureDirectoryExists(dirPath) {
+  const spinner = createSpinner(`Preparing directory: ${dirPath}`);
+  spinner.start();
   try {
     if (!fs.existsSync(dirPath)) {
-      console.info(chalk.blue(`Creating directory: ${dirPath}`));
       fs.mkdirSync(dirPath, { recursive: true });
-      console.info(chalk.green('Directory created successfully'));
+      spinner.succeed(`Created directory: ${dirPath}`);
     } else {
-      console.info(chalk.blue(`Directory already exists: ${dirPath}`));
+      spinner.succeed(`Using existing directory: ${dirPath}`);
     }
   } catch (error) {
-    handleError(`Failed to create directory: ${error.message}`);
+    spinner.fail(`Failed to prepare directory: ${dirPath}`);
+    handleError(ERROR_MESSAGES.DIRECTORY_CREATE_FAILED(dirPath, error.message));
   }
 }
 
@@ -73,23 +93,19 @@ function ensureDirectoryExists(dirPath) {
 async function saveSingleScreenshot(screenshot, url, device, options = {}) {
   try {
     const baseDir = await getBaseOutputDir(options);
-
-    // Create device-specific subfolder if multiple devices
     const outputPath = options.device === 'all' ?
       path.join(baseDir, device) : baseDir;
 
-    ensureDirectoryExists(outputPath);
+    if (!fs.existsSync(outputPath)) {
+      fs.mkdirSync(outputPath, { recursive: true });
+    }
 
     const filename = generateFilename(url, device, options);
     const filepath = path.join(outputPath, filename);
-
-    console.info(chalk.blue(`Saving screenshot to: ${filepath}`));
     fs.writeFileSync(filepath, screenshot);
-    console.info(chalk.green('Screenshot saved successfully'));
-
     return filepath;
   } catch (error) {
-    handleError(`Failed to save screenshot: ${error.message}`);
+    handleError(ERROR_MESSAGES.SAVE_SCREENSHOT_FAILED(filepath || 'unknown', error.message));
   }
 }
 
@@ -101,25 +117,31 @@ async function saveSingleScreenshot(screenshot, url, device, options = {}) {
  * @returns {Promise<string|string[]>} Path(s) to saved file(s)
  */
 async function saveScreenshot(screenshots, url, options = {}) {
+  const mainSpinner = createSpinner('Saving screenshots...');
+  mainSpinner.start();
   try {
-    const baseDir = await getBaseOutputDir(options);
-    console.info(chalk.blue(`Using base output directory: ${baseDir}`));
-    ensureDirectoryExists(baseDir);
-
     // Handle multiple screenshots (all devices)
     if (typeof screenshots === 'object' && !Buffer.isBuffer(screenshots)) {
       const savedPaths = [];
+      const totalScreenshots = Object.keys(screenshots).length;
+
       for (const [device, screenshot] of Object.entries(screenshots)) {
         const filepath = await saveSingleScreenshot(screenshot, url, device, options);
         savedPaths.push(filepath);
+        mainSpinner.text = `Saving screenshots... (${savedPaths.length}/${totalScreenshots})`;
       }
+
+      mainSpinner.succeed(`✨ All ${savedPaths.length} screenshots saved successfully`);
       return savedPaths;
     }
 
     // Handle single screenshot
-    return await saveSingleScreenshot(screenshots, url, options.device || 'default', options);
+    const result = await saveSingleScreenshot(screenshots, url, options.device || 'default', options);
+    mainSpinner.succeed('✨ Screenshot saved successfully');
+    return result;
   } catch (error) {
-    handleError(`Failed to save screenshot(s): ${error.message}`);
+    mainSpinner.fail('Failed to save screenshots');
+    handleError(error.message);
   }
 }
 
