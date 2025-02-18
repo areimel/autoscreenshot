@@ -2,6 +2,7 @@
 
 const { program } = require('commander');
 const chalk = require('chalk');
+const inquirer = require('inquirer');
 const package = require('../package.json');
 const {
   isValidUrl,
@@ -36,11 +37,74 @@ program
 
 // Default command (no arguments)
 program
-  .action(() => {
+  .action(async () => {
     if (process.argv.length === 2) {
-      console.info(chalk.blue('Welcome to AutoScreenshot!'));
-      console.info('To get started, run: autoscreenshot <url>');
-      console.info('\nFor help, run: autoscreenshot --help');
+      console.info(chalk.blue('Welcome to AutoScreenshot! 📸'));
+      console.info(chalk.gray('Interactive Mode\n'));
+
+      const answers = await inquirer.prompt([
+        {
+          type: 'input',
+          name: 'url',
+          message: 'Enter the URL to screenshot:',
+          validate: (input) => isValidUrl(input) || 'Please enter a valid URL'
+        },
+        {
+          type: 'list',
+          name: 'type',
+          message: 'Choose screenshot type:',
+          choices: ['full-page', 'viewport'],
+          default: 'full-page'
+        },
+        {
+          type: 'list',
+          name: 'device',
+          message: 'Choose device size:',
+          choices: ['desktop', 'laptop', 'tablet', 'phone', 'all'],
+          default: 'desktop'
+        },
+        {
+          type: 'input',
+          name: 'wait',
+          message: 'Delay before screenshot (seconds):',
+          default: '0',
+          validate: (input) => isValidDelay(input) || 'Please enter a valid delay time'
+        },
+        {
+          type: 'list',
+          name: 'format',
+          message: 'Choose file format:',
+          choices: ['png', 'jpg'],
+          default: 'png'
+        }
+      ]);
+
+      try {
+        console.info(chalk.blue('\nStarting screenshot process...'));
+        console.info(chalk.gray('URL:', answers.url));
+        console.info(chalk.gray('Type:', answers.type));
+        console.info(chalk.gray('Device:', answers.device));
+        console.info(chalk.gray('Delay:', answers.wait, 'seconds'));
+        console.info(chalk.gray('Format:', answers.format));
+
+        // Take screenshot(s)
+        const screenshots = await takeScreenshot(answers.url, answers);
+
+        // Save screenshot(s)
+        const savedPaths = await saveScreenshot(screenshots, answers.url, answers);
+
+        // Display results
+        if (Array.isArray(savedPaths)) {
+          console.info(chalk.green('\n✨ All screenshots saved successfully:'));
+          savedPaths.forEach(path => {
+            console.info(chalk.green(`  ✓ ${path}`));
+          });
+        } else {
+          console.info(chalk.green(`\n✨ Screenshot saved successfully to:\n  ✓ ${savedPaths}`));
+        }
+      } catch (error) {
+        handleError(`An unexpected error occurred: ${error.message}`);
+      }
     }
   });
 
